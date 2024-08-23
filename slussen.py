@@ -37,7 +37,9 @@ departuredata = get_departures(timestamp)
 buses = []
 for departure in departuredata:
     buses.append(departure["line"])
-buses = sorted(list(set(buses)))
+
+buses = list(set(buses))
+buses.sort(key=lambda x: int("".join([i for i in x if i.isdigit()])))
 
 buses_selected = st.multiselect("Välj bussar", buses, default=buses)
 
@@ -54,3 +56,4 @@ for departure in departuredata:
         )
 
 st.dataframe(output, use_container_width=True)
+st.button("Uppdatera")
