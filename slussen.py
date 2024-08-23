@@ -41,9 +41,24 @@ for departure in departuredata:
 buses = list(set(buses))
 buses.sort(key=lambda x: int("".join([i for i in x if i.isdigit()])))
 
-buses_selected = st.multiselect("Välj bussar", buses, default=buses)
+all_buses = st.checkbox("Alla bussar", value=True)
+
+if all_buses:
+    buses_selected = buses
+    buses_selected = st.multiselect(
+        "Välj bussar", buses, default=buses, placeholder="Inga bussar valda"
+    )
+else:
+    buses_selected = st.multiselect(
+        "Välj bussar", buses, placeholder="Inga bussar valda"
+    )
+
 
 output = []
+if not buses_selected:
+    st.error("Inga bussar valda")
+    st.stop()
+
 for departure in departuredata:
     if departure["line"] in buses_selected:
         output.append(
