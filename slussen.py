@@ -11,7 +11,7 @@ st.title("Slussen")
 def get_departures(timestamp):
     departures = []
     headers = {"Content-Type": "application/json"}
-    url = f"https://transport.integration.sl.se/v1/sites/9192/departures?transport=BUS"
+    url = "https://transport.integration.sl.se/v1/sites/9192/departures?transport=BUS"
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         data = response.json()
