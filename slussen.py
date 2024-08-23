@@ -45,12 +45,9 @@ all_buses = st.checkbox("Alla bussar", value=True)
 
 if all_buses:
     buses_selected = buses
-    buses_selected = st.multiselect(
-        "Välj bussar", buses, default=buses, placeholder="Inga bussar valda"
-    )
 else:
     buses_selected = st.multiselect(
-        "Välj bussar", buses, placeholder="Inga bussar valda"
+        "Välj bussar", buses, default=buses, placeholder="Inga bussar valda"
     )
 
 
