@@ -3,7 +3,7 @@ import time
 import requests
 import streamlit as st
 
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="Slussen", page_icon="🚌", layout="wide")
 
 
 @st.cache_data
@@ -28,43 +28,43 @@ def get_departures(timestamp):
                 }
             )
         return departures
+    else:
+        return None
 
 
 timestamp = time.strftime("%Y%m%d%H%M")
 departuredata = get_departures(timestamp)
 
-buses = []
-for departure in departuredata:
-    buses.append(departure["line"])
-
-buses = list(set(buses))
-buses.sort(key=lambda x: int("".join([i for i in x if i.isdigit()])))
+buses = sorted(
+    {departure["line"] for departure in departuredata},
+    key=lambda x: int("".join(filter(str.isdigit, x))),
+)
 
 all_buses = st.checkbox("Alla bussar", value=True)
+buses_selected = (
+    buses
+    if all_buses
+    else st.multiselect("Välj bussar", buses, placeholder="Inga bussar valda")
+)
 
-if all_buses:
-    buses_selected = buses
-else:
-    buses_selected = st.multiselect(
-        "Välj bussar", buses, default=buses, placeholder="Inga bussar valda"
-    )
-
-
-output = []
 if not buses_selected:
     st.error("Inga bussar valda")
     st.stop()
 
-for departure in departuredata:
-    if departure["line"] in buses_selected:
-        output.append(
-            {
-                "Linje": departure["line"],
-                "Destination": departure["destination"],
-                "Avgår": departure["display"],
-                "Hållplats": departure["stoppoint"],
-            }
-        )
+output = [
+    {
+        "Linje": departure["line"],
+        "Destination": departure["destination"],
+        "Avgår": departure["display"],
+        "Hållplats": departure["stoppoint"],
+    }
+    for departure in departuredata
+    if departure["line"] in buses_selected
+]
+
+if not output:
+    st.error("Inga avgångar hittades")
+    st.stop()
 
 st.dataframe(output, use_container_width=True)
 st.button("Uppdatera")
