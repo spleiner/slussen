@@ -30,20 +30,27 @@ def get_departures(timestamp):
         return None
 
     if data:
+        additional_lines = ["25M", "26M", "423", "449", "71T"]
+        lines_glasbruksgatan = ["25M", "26M", "423", "449"]
+        lines_slussbrogatan = ["71T"]
         for departure in data["departures"]:
             if (
                 len(departure["line"]["designation"]) >= 3
                 and departure["line"]["designation"][:3].isdigit()
                 and departure["line"]["designation"][:1] == "4"
-            ):
-                departures.append(
-                    {
-                        "line": departure["line"]["designation"],
-                        "destination": departure["destination"],
-                        "display": departure["display"],
-                        "stoppoint": departure["stop_point"]["designation"],
-                    }
-                )
+            ) or departure["line"]["designation"] in additional_lines:
+                departureinfo = {
+                    "line": departure["line"]["designation"],
+                    "destination": departure["destination"],
+                    "display": departure["display"],
+                    "stoppoint": departure["stop_point"]["designation"],
+                }
+                if departure["line"]["designation"] in lines_glasbruksgatan:
+                    departureinfo["stoppoint"] += " (Glasbruksgatan)"
+                elif departure["line"]["designation"] in lines_slussbrogatan:
+                    departureinfo["stoppoint"] += " (Slussbrogatan)"
+
+                departures.append(departureinfo)
         return departures
     else:
         return None
