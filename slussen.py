@@ -32,15 +32,48 @@ def get_departures(timestamp):
             return None
 
         if data:
-            additional_lines = ["25M", "26M", "423", "449", "71T"]
+            lines = [
+                "401",
+                "402",
+                "409",
+                "410",
+                "413",
+                "414",
+                "420",
+                "422",
+                "425",
+                "428X",
+                "429X",
+                "430X",
+                "432",
+                "433",
+                "434",
+                "435",
+                "436",
+                "437",
+                "438",
+                "439",
+                "440",
+                "441",
+                "442",
+                "443",
+                "444",
+                "445",
+                "471",
+                "474",
+                "491",
+                "496",
+                "497",
+                "25M",
+                "26M",
+                "423",
+                "449",
+                "71T",
+            ]
             lines_glasbruksgatan = ["25M", "26M", "423", "449"]
             lines_slussbrogatan = ["71T"]
             for departure in data["departures"]:
-                if (
-                    len(departure["line"]["designation"]) >= 3
-                    and departure["line"]["designation"][:3].isdigit()
-                    and departure["line"]["designation"][:1] == "4"
-                ) or departure["line"]["designation"] in additional_lines:
+                if departure["line"]["designation"] in lines:
                     departureinfo = {
                         "line": departure["line"]["designation"],
                         "destination": departure["destination"],
@@ -61,7 +94,6 @@ def get_departures(timestamp):
 
                     departures.append(departureinfo)
 
-    # Sort by expected time
     departures = sorted(departures, key=lambda x: x["expected"])
     return departures
 
