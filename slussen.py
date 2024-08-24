@@ -3,7 +3,19 @@ import time
 import requests
 import streamlit as st
 
-st.set_page_config(page_title="SLussen", page_icon="🚌", layout="wide")
+st.set_page_config(
+    page_title="SLussen",
+    page_icon="🚌",
+    layout="wide",
+    menu_items={
+        "about": """
+        # SLussen
+
+        SLussen är en enkel app för att visa avgångar från Slussen. Appen använder SLs öppna API för att hämta data om avgångar från Slussen.
+        """,
+        "Report a Bug": "https://github.com/spleiner/slussen/issues",
+    },
+)
 
 
 @st.cache_data
