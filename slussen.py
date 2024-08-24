@@ -31,14 +31,19 @@ def get_departures(timestamp):
 
     if data:
         for departure in data["departures"]:
-            departures.append(
-                {
-                    "line": departure["line"]["designation"],
-                    "destination": departure["destination"],
-                    "display": departure["display"],
-                    "stoppoint": departure["stop_point"]["designation"],
-                }
-            )
+            if (
+                len(departure["line"]["designation"]) >= 3
+                and departure["line"]["designation"][:3].isdigit()
+                and departure["line"]["designation"][:1] == "4"
+            ):
+                departures.append(
+                    {
+                        "line": departure["line"]["designation"],
+                        "destination": departure["destination"],
+                        "display": departure["display"],
+                        "stoppoint": departure["stop_point"]["designation"],
+                    }
+                )
         return departures
     else:
         return None
