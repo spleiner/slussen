@@ -21,39 +21,49 @@ st.set_page_config(
 @st.cache_data
 def get_departures(timestamp):
     departures = []
-    headers = {"Content-Type": "application/json"}
-    url = "https://transport.integration.sl.se/v1/sites/9192/departures?transport=BUS"
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        data = response.json()
-    else:
-        return None
+    sites = ["9192", "1321"]
+    for site in sites:
+        headers = {"Content-Type": "application/json"}
+        url = f"https://transport.integration.sl.se/v1/sites/{site}/departures?transport=BUS"
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+        else:
+            return None
 
-    if data:
-        additional_lines = ["25M", "26M", "423", "449", "71T"]
-        lines_glasbruksgatan = ["25M", "26M", "423", "449"]
-        lines_slussbrogatan = ["71T"]
-        for departure in data["departures"]:
-            if (
-                len(departure["line"]["designation"]) >= 3
-                and departure["line"]["designation"][:3].isdigit()
-                and departure["line"]["designation"][:1] == "4"
-            ) or departure["line"]["designation"] in additional_lines:
-                departureinfo = {
-                    "line": departure["line"]["designation"],
-                    "destination": departure["destination"],
-                    "display": departure["display"],
-                    "stoppoint": departure["stop_point"]["designation"],
-                }
-                if departure["line"]["designation"] in lines_glasbruksgatan:
-                    departureinfo["stoppoint"] += " (Glasbruksgatan)"
-                elif departure["line"]["designation"] in lines_slussbrogatan:
-                    departureinfo["stoppoint"] += " (Slussbrogatan)"
+        if data:
+            additional_lines = ["25M", "26M", "423", "449", "71T"]
+            lines_glasbruksgatan = ["25M", "26M", "423", "449"]
+            lines_slussbrogatan = ["71T"]
+            for departure in data["departures"]:
+                if (
+                    len(departure["line"]["designation"]) >= 3
+                    and departure["line"]["designation"][:3].isdigit()
+                    and departure["line"]["designation"][:1] == "4"
+                ) or departure["line"]["designation"] in additional_lines:
+                    departureinfo = {
+                        "line": departure["line"]["designation"],
+                        "destination": departure["destination"],
+                        "display": departure["display"],
+                        "expected": departure["expected"],
+                    }
+                    try:
+                        departureinfo["stoppoint"] = departure["stop_point"][
+                            "designation"
+                        ]
+                    except KeyError:
+                        departureinfo["stoppoint"] = ""
 
-                departures.append(departureinfo)
-        return departures
-    else:
-        return None
+                    if departure["line"]["designation"] in lines_glasbruksgatan:
+                        departureinfo["stoppoint"] += " (Glasbruksgatan)"
+                    elif departure["line"]["designation"] in lines_slussbrogatan:
+                        departureinfo["stoppoint"] += " (Slussbrogatan)"
+
+                    departures.append(departureinfo)
+
+    # Sort by expected time
+    departures = sorted(departures, key=lambda x: x["expected"])
+    return departures
 
 
 timestamp = time.strftime("%Y%m%d%H%M")
