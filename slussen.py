@@ -131,8 +131,10 @@ departuredata = get_departures(timestamp)
 deviationdata = get_deviations(timestamp)
 
 if deviationdata:
-    for deviation in deviationdata:
-        st.error(deviation["header"])
+    with st.expander("Trafikstörningar"):
+        for deviation in deviationdata:
+            st.error(f"**{deviation['header']}**")
+            st.write(deviation["details"])
 
 
 if departuredata == []:
