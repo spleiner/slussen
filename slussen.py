@@ -88,7 +88,7 @@ def get_departures(timestamp):
                         departureinfo["stoppoint"] = ""
 
                     if departure["line"]["designation"] in lines_glasbruksgatan:
-                        departureinfo["stoppoint"] += " (Glasbruksgatan)"
+                        departureinfo["stoppoint"] = "Glasbruksgatan"
                     elif departure["line"]["designation"] in lines_slussbrogatan:
                         departureinfo["stoppoint"] += " (Slussbrogatan)"
 
