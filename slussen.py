@@ -22,10 +22,11 @@ st.set_page_config(
 def get_departures(timestamp):
     departures = []
     sites = ["9192", "1321"]
+    s = requests.Session()
     for site in sites:
         headers = {"Content-Type": "application/json"}
         url = f"https://transport.integration.sl.se/v1/sites/{site}/departures?transport=BUS"
-        response = requests.get(url, headers=headers)
+        response = s.get(url, headers=headers)
         if response.status_code == 200:
             data = response.json()
         else:
