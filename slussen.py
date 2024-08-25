@@ -103,6 +103,10 @@ def get_departures(timestamp):
 timestamp = time.strftime("%Y%m%d%H%M")
 departuredata = get_departures(timestamp)
 
+if departuredata == []:
+    st.error("Inga avgångar hittades")
+    st.stop()
+
 buses = sorted(
     {departure["line"] for departure in departuredata},
     key=lambda x: int("".join(filter(str.isdigit, x))),
