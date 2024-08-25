@@ -100,8 +100,40 @@ def get_departures(timestamp):
     return departures
 
 
+@st.cache_data
+def get_deviations(timestamp):
+    deviations = []
+    sites = ["9192", "1321"]
+    sitestring = ""
+    for site in sites:
+        sitestring += f"&site={site}"
+    headers = {"Content-Type": "application/json"}
+    url = f"https://deviations.integration.sl.se/v1/messages?future=true{sitestring}"
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        for deviation in data:
+            for message in deviation["message_variants"]:
+                if message["language"] == "sv":
+                    deviationinfo = {
+                        "header": message["header"],
+                        "details": message["details"],
+                    }
+                    deviations.append(deviationinfo)
+    else:
+        return deviations
+
+    return deviations
+
+
 timestamp = time.strftime("%Y%m%d%H%M")
 departuredata = get_departures(timestamp)
+deviationdata = get_deviations(timestamp)
+
+if deviationdata:
+    for deviation in deviationdata:
+        st.error(deviation["header"])
+
 
 if departuredata == []:
     st.error("Inga avgångar hittades")
