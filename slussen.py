@@ -29,7 +29,7 @@ def get_departures(timestamp):
         if response.status_code == 200:
             data = response.json()
         else:
-            return None
+            return departures
 
         if data:
             lines = [
@@ -93,6 +93,8 @@ def get_departures(timestamp):
                         departureinfo["stoppoint"] += " (Slussbrogatan)"
 
                     departures.append(departureinfo)
+        else:
+            return departures
 
     departures = sorted(departures, key=lambda x: x["expected"])
     return departures
