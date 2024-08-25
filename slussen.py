@@ -112,7 +112,7 @@ buses = sorted(
     key=lambda x: int("".join(filter(str.isdigit, x))),
 )
 
-all_buses = st.checkbox(
+all_buses = st.toggle(
     "Alla bussar (avmarkera för att välja enskilda linjer)", value=True
 )
 buses_selected = (
