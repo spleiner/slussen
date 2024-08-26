@@ -114,13 +114,17 @@ def get_deviations(timestamp):
     if response.status_code == 200:
         data = response.json()
         for deviation in data:
-            for message in deviation["message_variants"]:
-                if message["language"] == "sv":
-                    deviationinfo = {
-                        "header": message["header"],
-                        "details": message["details"],
-                    }
-                    deviations.append(deviationinfo)
+            if (
+                deviation["priority"]["importance_level"] >= 5
+                and deviation["priority"]["influence_level"] >= 5
+            ):
+                for message in deviation["message_variants"]:
+                    if message["language"] == "sv":
+                        deviationinfo = {
+                            "header": message["header"],
+                            "details": message["details"],
+                        }
+                        deviations.append(deviationinfo)
     else:
         return deviations
 
