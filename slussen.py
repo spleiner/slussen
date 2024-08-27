@@ -21,8 +21,8 @@ st.set_page_config(
 )
 
 
-@st.cache_data
-def get_departures(ttl=60):
+@st.cache_data(ttl=60)
+def get_departures():
     departures = []
     for site in sites:
         url = f"https://transport.integration.sl.se/v1/sites/{site}/departures?transport=BUS"
@@ -101,8 +101,8 @@ def get_departures(ttl=60):
     return departures
 
 
-@st.cache_data
-def get_deviations(ttl=60):
+@st.cache_data(ttl=60)
+def get_deviations():
     deviations = []
     sitestring = ""
     for site in sites:
