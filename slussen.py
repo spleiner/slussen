@@ -3,6 +3,11 @@ import time
 import requests
 import streamlit as st
 
+s = requests.Session()
+
+sites = ["9192", "1321"]
+headers = {"Content-Type": "application/json"}
+
 st.set_page_config(
     page_title="SLussen",
     page_icon="🚌",
@@ -21,10 +26,7 @@ st.set_page_config(
 @st.cache_data
 def get_departures(timestamp):
     departures = []
-    sites = ["9192", "1321"]
-    s = requests.Session()
     for site in sites:
-        headers = {"Content-Type": "application/json"}
         url = f"https://transport.integration.sl.se/v1/sites/{site}/departures?transport=BUS"
         response = s.get(url, headers=headers)
         if response.status_code == 200:
@@ -104,13 +106,11 @@ def get_departures(timestamp):
 @st.cache_data
 def get_deviations(timestamp):
     deviations = []
-    sites = ["9192", "1321"]
     sitestring = ""
     for site in sites:
         sitestring += f"&site={site}"
-    headers = {"Content-Type": "application/json"}
     url = f"https://deviations.integration.sl.se/v1/messages?future=true{sitestring}"
-    response = requests.get(url, headers=headers)
+    response = s.get(url, headers=headers)
     if response.status_code == 200:
         data = response.json()
         for deviation in data:
