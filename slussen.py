@@ -1,5 +1,3 @@
-import time
-
 import requests
 import streamlit as st
 
@@ -24,7 +22,7 @@ st.set_page_config(
 
 
 @st.cache_data
-def get_departures(timestamp):
+def get_departures(ttl=60):
     departures = []
     for site in sites:
         url = f"https://transport.integration.sl.se/v1/sites/{site}/departures?transport=BUS"
@@ -104,7 +102,7 @@ def get_departures(timestamp):
 
 
 @st.cache_data
-def get_deviations(timestamp):
+def get_deviations(ttl=60):
     deviations = []
     sitestring = ""
     for site in sites:
@@ -133,9 +131,8 @@ def get_deviations(timestamp):
     return deviations
 
 
-timestamp = time.strftime("%Y%m%d%H%M")
-departuredata = get_departures(timestamp)
-deviationdata = get_deviations(timestamp)
+departuredata = get_departures()
+deviationdata = get_deviations()
 
 if deviationdata:
     with st.expander("**:red[Trafikstörningar]**", icon="🚨"):
