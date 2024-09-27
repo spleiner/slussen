@@ -20,113 +20,104 @@ st.set_page_config(
     },
 )
 
+LINES = [
+    "401",
+    "402",
+    "409",
+    "410",
+    "413",
+    "414",
+    "420",
+    "422",
+    "425",
+    "428X",
+    "429X",
+    "430X",
+    "432",
+    "433",
+    "434",
+    "435",
+    "436",
+    "437",
+    "438",
+    "439",
+    "440",
+    "441",
+    "442",
+    "443",
+    "444",
+    "445",
+    "471",
+    "474",
+    "491",
+    "496",
+    "497",
+    "25M",
+    "26M",
+    "423",
+    "449",
+    "71T",
+]
+LINES_GLASBRUKSGATAN = ["25M", "26M", "423", "449"]
+LINES_SLUSSBROGATAN = ["71T"]
+
+
+def fetch_data(url):
+    response = s.get(url, headers=headers)
+    return response.json() if response.status_code == 200 else None
+
 
 @st.cache_data(ttl=60)
 def get_departures():
     departures = []
     for site in sites:
         url = f"https://transport.integration.sl.se/v1/sites/{site}/departures?transport=BUS"
-        response = s.get(url, headers=headers)
-        if response.status_code == 200:
-            data = response.json()
-        else:
+        data = fetch_data(url)
+        if not data:
             return departures
 
-        if data:
-            lines = [
-                "401",
-                "402",
-                "409",
-                "410",
-                "413",
-                "414",
-                "420",
-                "422",
-                "425",
-                "428X",
-                "429X",
-                "430X",
-                "432",
-                "433",
-                "434",
-                "435",
-                "436",
-                "437",
-                "438",
-                "439",
-                "440",
-                "441",
-                "442",
-                "443",
-                "444",
-                "445",
-                "471",
-                "474",
-                "491",
-                "496",
-                "497",
-                "25M",
-                "26M",
-                "423",
-                "449",
-                "71T",
-            ]
-            lines_glasbruksgatan = ["25M", "26M", "423", "449"]
-            lines_slussbrogatan = ["71T"]
-            for departure in data["departures"]:
-                if departure["line"]["designation"] in lines:
-                    departureinfo = {
+        for departure in data["departures"]:
+            if departure["line"]["designation"] in LINES:
+                stoppoint = departure.get("stop_point", {}).get("designation", "")
+                if departure["line"]["designation"] in LINES_GLASBRUKSGATAN:
+                    stoppoint = "Glasbruksgatan"
+                elif departure["line"]["designation"] in LINES_SLUSSBROGATAN:
+                    stoppoint += " (Slussbrogatan)"
+
+                departures.append(
+                    {
                         "line": departure["line"]["designation"],
                         "destination": departure["destination"],
                         "display": departure["display"],
                         "expected": departure["expected"],
+                        "stoppoint": stoppoint,
                     }
-                    try:
-                        departureinfo["stoppoint"] = departure["stop_point"][
-                            "designation"
-                        ]
-                    except KeyError:
-                        departureinfo["stoppoint"] = ""
+                )
 
-                    if departure["line"]["designation"] in lines_glasbruksgatan:
-                        departureinfo["stoppoint"] = "Glasbruksgatan"
-                    elif departure["line"]["designation"] in lines_slussbrogatan:
-                        departureinfo["stoppoint"] += " (Slussbrogatan)"
-
-                    departures.append(departureinfo)
-        else:
-            return departures
-
-    departures = sorted(departures, key=lambda x: x["expected"])
-    return departures
+    return sorted(departures, key=lambda x: x["expected"])
 
 
 @st.cache_data(ttl=60)
 def get_deviations():
-    deviations = []
-    sitestring = ""
-    for site in sites:
-        sitestring += f"&site={site}"
+    sitestring = "".join(f"&site={site}" for site in sites)
     url = f"https://deviations.integration.sl.se/v1/messages?future=true{sitestring}"
-    response = s.get(url, headers=headers)
-    if response.status_code == 200:
-        data = response.json()
-        for deviation in data:
-            for message in deviation["message_variants"]:
-                if (
-                    deviation["priority"]["importance_level"]
-                    * deviation["priority"]["influence_level"]
-                    * deviation["priority"]["urgency_level"]
-                    > 35
-                ):
-                    if message["language"] == "sv":
-                        deviationinfo = {
-                            "header": message["header"],
-                            "details": message["details"],
-                        }
-                        deviations.append(deviationinfo)
-    else:
-        return deviations
+    data = fetch_data(url)
+    if not data:
+        return []
+
+    deviations = []
+    for deviation in data:
+        for message in deviation["message_variants"]:
+            priority = deviation["priority"]
+            if (
+                priority["importance_level"]
+                * priority["influence_level"]
+                * priority["urgency_level"]
+                > 35
+            ) and message["language"] == "sv":
+                deviations.append(
+                    {"header": message["header"], "details": message["details"]}
+                )
 
     return deviations
 
@@ -140,8 +131,7 @@ if deviationdata:
             st.error(f"**{deviation['header']}**")
             st.write(deviation["details"])
 
-
-if departuredata == []:
+if not departuredata:
     st.error("Inga avgångar hittades")
     st.stop()
 
