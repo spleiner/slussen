@@ -1,25 +1,10 @@
 import requests
 import streamlit as st
+from requests.exceptions import RequestException
 
-s = requests.Session()
-
-sites = ["9192", "1321"]
-headers = {"Content-Type": "application/json"}
-
-st.set_page_config(
-    page_title="SLussen",
-    page_icon="🚌",
-    layout="wide",
-    menu_items={
-        "about": """
-        # SLussen
-
-        SLussen är en enkel app för att visa avgångar från Slussen. Appen använder SLs öppna API för att hämta data om avgångar från Slussen.
-        """,
-        "Report a Bug": "https://github.com/spleiner/slussen/issues",
-    },
-)
-
+# Constants
+SITES = ["9192", "1321"]
+HEADERS = {"Content-Type": "application/json"}
 LINES = [
     "401",
     "402",
@@ -60,23 +45,48 @@ LINES = [
 ]
 LINES_GLASBRUKSGATAN = ["25M", "26M", "423", "449"]
 LINES_SLUSSBROGATAN = ["71T"]
+BASE_DEPARTURE_URL = (
+    "https://transport.integration.sl.se/v1/sites/{site}/departures?transport=BUS"
+)
+BASE_DEVIATION_URL = "https://deviations.integration.sl.se/v1/messages?future=true"
+
+# Configure Streamlit page
+st.set_page_config(
+    page_title="SLussen",
+    page_icon="🚌",
+    layout="wide",
+    menu_items={
+        "about": """
+        # SLussen
+
+        SLussen är en enkel app för att visa avgångar från Slussen. Appen använder SLs öppna API för att hämta data om avgångar från Slussen.
+        """,
+        "Report a Bug": "https://github.com/spleiner/slussen/issues",
+    },
+)
 
 
+# Utility function for fetching data
 def fetch_data(url):
-    response = s.get(url, headers=headers)
-    return response.json() if response.status_code == 200 else None
+    try:
+        response = requests.get(url, headers=HEADERS)
+        response.raise_for_status()
+        return response.json()
+    except RequestException as e:
+        st.error(f"Failed to fetch data: {e}")
+        return None
 
 
 @st.cache_data(ttl=60)
 def get_departures():
     departures = []
-    for site in sites:
-        url = f"https://transport.integration.sl.se/v1/sites/{site}/departures?transport=BUS"
+    for site in SITES:
+        url = BASE_DEPARTURE_URL.format(site=site)
         data = fetch_data(url)
         if not data:
-            return departures
+            continue
 
-        for departure in data["departures"]:
+        for departure in data.get("departures", []):
             if departure["line"]["designation"] in LINES:
                 stoppoint = departure.get("stop_point", {}).get("designation", "")
                 if departure["line"]["designation"] in LINES_GLASBRUKSGATAN:
@@ -99,22 +109,22 @@ def get_departures():
 
 @st.cache_data(ttl=60)
 def get_deviations():
-    sitestring = "".join(f"&site={site}" for site in sites)
-    url = f"https://deviations.integration.sl.se/v1/messages?future=true{sitestring}"
+    sitestring = "".join(f"&site={site}" for site in SITES)
+    url = f"{BASE_DEVIATION_URL}{sitestring}"
     data = fetch_data(url)
     if not data:
         return []
 
     deviations = []
     for deviation in data:
-        for message in deviation["message_variants"]:
-            priority = deviation["priority"]
+        for message in deviation.get("message_variants", []):
+            priority = deviation.get("priority", {})
             if (
-                priority["importance_level"]
-                * priority["influence_level"]
-                * priority["urgency_level"]
+                priority.get("importance_level", 0)
+                * priority.get("influence_level", 0)
+                * priority.get("urgency_level", 0)
                 > 35
-            ) and message["language"] == "sv":
+            ) and message.get("language") == "sv":
                 deviations.append(
                     {"header": message["header"], "details": message["details"]}
                 )
@@ -122,25 +132,29 @@ def get_deviations():
     return deviations
 
 
+# Fetching departures and deviations
 departuredata = get_departures()
 deviationdata = get_deviations()
 
+# Display deviations if any
 if deviationdata:
     with st.expander("**:red[Trafikstörningar]**", icon="🚨"):
         for deviation in deviationdata:
             st.error(f"**{deviation['header']}**")
             st.write(deviation["details"])
 
+# Validate departure data
 if not departuredata:
     st.error("Inga avgångar hittades")
     st.stop()
 
+# Select bus lines
 buses = sorted(
     {departure["line"] for departure in departuredata},
-    key=lambda x: int("".join(filter(str.isdigit, x))),
+    key=lambda x: int("".join(filter(str.isdigit, x))) if x.isdigit() else float("inf"),
 )
 
-all_buses = st.toggle(
+all_buses = st.checkbox(
     "Alla bussar (avmarkera för att välja enskilda linjer)", value=True
 )
 buses_selected = (
@@ -149,10 +163,12 @@ buses_selected = (
     else st.multiselect("Välj bussar", buses, placeholder="Inga bussar valda")
 )
 
+# Validate selected bus lines
 if not buses_selected:
     st.error("Inga bussar valda")
     st.stop()
 
+# Filter and display departures
 output = [
     {
         "Linje": departure["line"],
