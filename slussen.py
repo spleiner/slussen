@@ -1,4 +1,5 @@
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import requests
@@ -78,46 +79,52 @@ def configure_page():
 
 
 # Utility function for fetching data with retry mechanism
-@st.cache_data(ttl=60)
 def fetch_data_with_retries(url):
     """
     Fetch data from a given URL and return JSON.
     Includes retry mechanism for handling transient errors.
     """
-    for attempt in range(MAX_RETRIES):
+    for attempt in range(1, MAX_RETRIES + 1):
         try:
             response = requests.get(url, headers=HEADERS, timeout=10)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.Timeout:
-            st.warning(f"Request timed out. Retrying {attempt + 1}/{MAX_RETRIES}...")
+            st.warning(f"Request timed out. Retrying {attempt}/{MAX_RETRIES}...")
         except requests.exceptions.HTTPError as http_error:
             st.error(
-                f"HTTP error occurred: {http_error}. Retrying {attempt + 1}/{MAX_RETRIES}..."
+                f"HTTP error occurred: {http_error}. Retrying {attempt}/{MAX_RETRIES}..."
             )
         except RequestException as request_error:
             st.error(
-                f"An error occurred: {request_error}. Retrying {attempt + 1}/{MAX_RETRIES}..."
+                f"An error occurred: {request_error}. Retrying {attempt}/{MAX_RETRIES}..."
             )
         time.sleep(RETRY_DELAY)
-    st.error("Failed to fetch data after multiple attempts. Please try again later.")
-    return None
+    raise Exception("Failed to fetch data after multiple attempts.")
 
 
-# Function to fetch departure data
+# Function to fetch departure data concurrently
 @st.cache_data(ttl=60)
 def fetch_departure_data():
     """
     Fetch and parse departure information for all specified sites.
     """
     departures = []
-    for site in SITES:
-        url = BASE_DEPARTURE_URL.format(site=site)
-        data = fetch_data_with_retries(url)
-        if not data:
-            continue
 
-        departures.extend(parse_departure_data(data))
+    def fetch_and_parse(site):
+        url = BASE_DEPARTURE_URL.format(site=site)
+        try:
+            data = fetch_data_with_retries(url)
+            return parse_departure_data(data)
+        except Exception as e:
+            st.error(f"Error fetching data for site {site}: {e}")
+            return []
+
+    with ThreadPoolExecutor() as executor:
+        results = executor.map(fetch_and_parse, SITES)
+
+    for result in results:
+        departures.extend(result)
 
     # Sort departures by expected time, putting None values at the end
     departures.sort(key=lambda x: x["expected"] or datetime.max)
@@ -131,19 +138,24 @@ def parse_departure_data(data):
     """
     departures = []
     for departure in data.get("departures", []):
-        line_designation = departure["line"]["designation"]
-        if line_designation in LINES:
-            stop_point = get_stop_point(departure, line_designation)
-            expected_time = parse_expected_time(departure.get("expected"))
-            departures.append(
-                {
-                    "line": line_designation,
-                    "destination": departure["destination"],
-                    "display": departure["display"],
-                    "expected": expected_time,
-                    "stop_point": stop_point,
-                }
-            )
+        try:
+            line_designation = departure["line"]["designation"]
+            if line_designation in LINES:
+                stop_point = get_stop_point(departure, line_designation)
+                expected_time = parse_expected_time(departure.get("expected"))
+                departures.append(
+                    {
+                        "line": line_designation,
+                        "destination": departure["destination"],
+                        "display": departure["display"],
+                        "expected": expected_time,
+                        "stop_point": stop_point,
+                    }
+                )
+        except KeyError as e:
+            st.warning(f"Missing key in departure data: {e}")
+        except Exception as e:
+            st.error(f"Error parsing departure data: {e}")
     return departures
 
 
@@ -160,19 +172,30 @@ def get_stop_point(departure, line_designation):
     return stop_point
 
 
-# Function to fetch deviation data
+# Function to fetch deviation data concurrently
 @st.cache_data(ttl=60)
 def fetch_deviation_data():
     """
     Fetch and parse deviation messages for the specified sites.
     """
-    site_string = "".join(f"&site={site}" for site in SITES)
-    url = f"{BASE_DEVIATION_URL}{site_string}"
-    data = fetch_data_with_retries(url)
-    if not data:
-        return []
+    deviations = []
 
-    return parse_deviation_data(data)
+    def fetch_and_parse(site):
+        url = f"{BASE_DEVIATION_URL}&site={site}"
+        try:
+            data = fetch_data_with_retries(url)
+            return parse_deviation_data(data)
+        except Exception as e:
+            st.error(f"Error fetching deviations for site {site}: {e}")
+            return []
+
+    with ThreadPoolExecutor() as executor:
+        results = executor.map(fetch_and_parse, SITES)
+
+    for result in results:
+        deviations.extend(result)
+
+    return deviations
 
 
 # Function to parse deviation data
@@ -182,11 +205,16 @@ def parse_deviation_data(data):
     """
     deviations = []
     for deviation in data:
-        for message in deviation.get("message_variants", []):
-            if should_include_deviation(deviation, message):
-                deviations.append(
-                    {"header": message["header"], "details": message["details"]}
-                )
+        try:
+            for message in deviation.get("message_variants", []):
+                if should_include_deviation(deviation, message):
+                    deviations.append(
+                        {"header": message["header"], "details": message["details"]}
+                    )
+        except KeyError as e:
+            st.warning(f"Missing key in deviation data: {e}")
+        except Exception as e:
+            st.error(f"Error parsing deviation data: {e}")
     return deviations
 
 
@@ -282,43 +310,48 @@ def filter_departures_by_selected_lines(departure_data, selected_bus_lines):
 
 
 # Main script
-configure_page()
+def main():
+    configure_page()
 
-# Fetching departures and deviations
-departure_data = fetch_departure_data()
-deviation_data = fetch_deviation_data()
+    # Fetching departures and deviations
+    departure_data = fetch_departure_data()
+    deviation_data = fetch_deviation_data()
 
-# Display deviations
-display_deviations(deviation_data)
+    # Display deviations
+    display_deviations(deviation_data)
 
-# Validate departure data
-validate_departure_data(departure_data)
+    # Validate departure data
+    validate_departure_data(departure_data)
 
-# Select bus lines
-bus_lines = get_sorted_bus_lines(departure_data)
-all_bus_lines = st.checkbox(
-    "Alla bussar (avmarkera för att välja enskilda linjer)", value=True
-)
-selected_bus_lines = (
-    bus_lines
-    if all_bus_lines
-    else st.multiselect("Välj bussar", bus_lines, placeholder="Inga bussar valda")
-)
+    # Select bus lines
+    bus_lines = get_sorted_bus_lines(departure_data)
+    all_bus_lines = st.checkbox(
+        "Alla bussar (avmarkera för att välja enskilda linjer)", value=True
+    )
+    selected_bus_lines = (
+        bus_lines
+        if all_bus_lines
+        else st.multiselect("Välj bussar", bus_lines, placeholder="Inga bussar valda")
+    )
 
-# Validate selected bus lines
-if not selected_bus_lines:
-    st.error("Inga bussar valda")
-    st.stop()
+    # Validate selected bus lines
+    if not selected_bus_lines:
+        st.error("Inga bussar valda")
+        st.stop()
 
-# Filter and display departures
-filtered_departures = filter_departures_by_selected_lines(
-    departure_data, selected_bus_lines
-)
+    # Filter and display departures
+    filtered_departures = filter_departures_by_selected_lines(
+        departure_data, selected_bus_lines
+    )
 
-if not filtered_departures:
-    st.error("Inga avgångar hittades")
-    st.stop()
+    if not filtered_departures:
+        st.error("Inga avgångar hittades")
+        st.stop()
 
-# Display the output in a table format
-st.dataframe(filtered_departures, use_container_width=True)
-st.button("Uppdatera")
+    # Display the output in a table format
+    st.dataframe(filtered_departures, use_container_width=True)
+    st.button("Uppdatera")
+
+
+if __name__ == "__main__":
+    main()
