@@ -74,7 +74,7 @@ def configure_page():
             SLussen är en enkel app för att visa avgångar från Slussen. Appen använder SLs öppna API för att hämta data om avgångar från Slussen.
             """,
             "Report a Bug": "https://github.com/spleiner/slussen/issues",
-        },
+        },  # pyright: ignore[reportArgumentType]
     )
 
 
@@ -90,14 +90,18 @@ def fetch_data_with_retries(url):
             response.raise_for_status()
             return response.json()
         except requests.exceptions.Timeout:
-            st.warning(f"Request timed out. Retrying {attempt}/{MAX_RETRIES}...")
+            st.toast(
+                f"Request timed out. Retrying {attempt}/{MAX_RETRIES}...", icon="⏳"
+            )
         except requests.exceptions.HTTPError as http_error:
-            st.error(
-                f"HTTP error occurred: {http_error}. Retrying {attempt}/{MAX_RETRIES}..."
+            st.toast(
+                f"HTTP error occurred: {http_error}. Retrying {attempt}/{MAX_RETRIES}...",
+                icon="❗",
             )
         except RequestException as request_error:
-            st.error(
-                f"An error occurred: {request_error}. Retrying {attempt}/{MAX_RETRIES}..."
+            st.toast(
+                f"An error occurred: {request_error}. Retrying {attempt}/{MAX_RETRIES}...",
+                icon="❗",
             )
         time.sleep(RETRY_DELAY)
     raise Exception("Failed to fetch data after multiple attempts.")
@@ -153,9 +157,9 @@ def parse_departure_data(data):
                     }
                 )
         except KeyError as e:
-            st.warning(f"Missing key in departure data: {e}")
+            st.toast(f"Missing key in departure data: {e}", icon="⚠️")
         except Exception as e:
-            st.error(f"Error parsing departure data: {e}")
+            st.toast(f"Error parsing departure data: {e}", icon="❗")
     return departures
 
 
@@ -212,9 +216,9 @@ def parse_deviation_data(data):
                         {"header": message["header"], "details": message["details"]}
                     )
         except KeyError as e:
-            st.warning(f"Missing key in deviation data: {e}")
+            st.toast(f"Missing key in deviation data: {e}", icon="⚠️")
         except Exception as e:
-            st.error(f"Error parsing deviation data: {e}")
+            st.toast(f"Error parsing deviation data: {e}", icon="❗")
     return deviations
 
 
@@ -255,9 +259,9 @@ def display_deviations(deviation_data):
     Display traffic deviations using Streamlit.
     """
     if deviation_data:
-        with st.expander("**:red[Trafikstörningar]**", icon="🚨"):
+        with st.status("Trafikstörningar", state="error", expanded=True):
             for deviation in deviation_data:
-                st.error(f"**{deviation['header']}**")
+                st.toast(f"{deviation['header']}", icon="🚨")
                 st.write(deviation["details"])
 
 
@@ -267,7 +271,7 @@ def validate_departure_data(departure_data):
     Validate the departure data and stop the app if none are found.
     """
     if not departure_data:
-        st.error("Inga avgångar hittades")
+        st.toast("Inga avgångar hittades", icon="⚠️")
         st.stop()
 
 
@@ -314,8 +318,9 @@ def main():
     configure_page()
 
     # Fetching departures and deviations
-    departure_data = fetch_departure_data()
-    deviation_data = fetch_deviation_data()
+    with st.spinner("Hämtar avgångar och trafikstörningar..."):
+        departure_data = fetch_departure_data()
+        deviation_data = fetch_deviation_data()
 
     # Display deviations
     display_deviations(deviation_data)
@@ -325,7 +330,7 @@ def main():
 
     # Select bus lines
     bus_lines = get_sorted_bus_lines(departure_data)
-    all_bus_lines = st.checkbox(
+    all_bus_lines = st.toggle(
         "Alla bussar (avmarkera för att välja enskilda linjer)", value=True
     )
     selected_bus_lines = (
@@ -336,7 +341,7 @@ def main():
 
     # Validate selected bus lines
     if not selected_bus_lines:
-        st.error("Inga bussar valda")
+        st.toast("Inga bussar valda", icon="⚠️")
         st.stop()
 
     # Filter and display departures
@@ -345,11 +350,11 @@ def main():
     )
 
     if not filtered_departures:
-        st.error("Inga avgångar hittades")
+        st.toast("Inga avgångar hittades", icon="⚠️")
         st.stop()
 
     # Display the output in a table format
-    st.dataframe(filtered_departures, use_container_width=True)
+    st.data_editor(filtered_departures, width="stretch", disabled=True)
     st.button("Uppdatera")
 
 
