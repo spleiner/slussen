@@ -259,20 +259,21 @@ def display_deviations(deviation_data):
     Display traffic deviations using Streamlit.
     """
     if deviation_data:
-        with st.status("Trafikstörningar", state="error", expanded=True):
-            for deviation in deviation_data:
-                st.toast(f"{deviation['header']}", icon="🚨")
-                st.write(deviation["details"])
+        st.subheader("Trafikstörningar")
+        for deviation in deviation_data:
+            st.error(f"🚨 {deviation['header']}")
+            st.write(deviation["details"])
 
 
 # Function to validate departure data
 def validate_departure_data(departure_data):
     """
-    Validate the departure data and stop the app if none are found.
+    Validate the departure data and show warning if none are found.
     """
     if not departure_data:
-        st.toast("Inga avgångar hittades", icon="⚠️")
-        st.stop()
+        st.warning("Inga avgångar hittades. Försök hämta data igen.")
+        return False
+    return True
 
 
 # Function to get bus lines
@@ -317,16 +318,37 @@ def filter_departures_by_selected_lines(departure_data, selected_bus_lines):
 def main():
     configure_page()
 
-    # Fetching departures and deviations
-    with st.spinner("Hämtar avgångar och trafikstörningar..."):
-        departure_data = fetch_departure_data()
-        deviation_data = fetch_deviation_data()
+    # Initialize session state for data
+    if "departure_data" not in st.session_state:
+        st.session_state.departure_data = []
+    if "deviation_data" not in st.session_state:
+        st.session_state.deviation_data = []
+    if "last_update" not in st.session_state:
+        st.session_state.last_update = None
+
+    # Initial fetch if no data
+    if not st.session_state.departure_data:
+        with st.spinner("Hämtar avgångar och trafikstörningar..."):
+            st.session_state.departure_data = fetch_departure_data()
+            st.session_state.deviation_data = fetch_deviation_data()
+            st.session_state.last_update = datetime.now()
+
+    departure_data = st.session_state.departure_data
+    deviation_data = st.session_state.deviation_data
 
     # Display deviations
     display_deviations(deviation_data)
 
     # Validate departure data
-    validate_departure_data(departure_data)
+    if not validate_departure_data(departure_data):
+        return
+
+    # Main content
+    st.subheader("Avgångar")
+    if st.session_state.last_update:
+        st.caption(
+            f"Senast uppdaterad: {st.session_state.last_update.strftime('%H:%M:%S')}"
+        )
 
     # Select bus lines
     bus_lines = get_sorted_bus_lines(departure_data)
@@ -344,18 +366,28 @@ def main():
         st.toast("Inga bussar valda", icon="⚠️")
         st.stop()
 
-    # Filter and display departures
-    filtered_departures = filter_departures_by_selected_lines(
-        departure_data, selected_bus_lines
-    )
+    if selected_bus_lines:
+        # Filter and display departures
+        filtered_departures = filter_departures_by_selected_lines(
+            departure_data, selected_bus_lines
+        )
 
-    if not filtered_departures:
-        st.toast("Inga avgångar hittades", icon="⚠️")
-        st.stop()
+        if not filtered_departures:
+            st.toast("Inga avgångar hittades", icon="⚠️")
+            st.stop()
 
-    # Display the output in a table format
-    st.data_editor(filtered_departures, width="stretch", disabled=True)
-    st.button("Uppdatera")
+        # Display the output in a table format
+        st.dataframe(filtered_departures, width="stretch")
+
+        # Update button
+        if st.button("Uppdatera data"):
+            with st.spinner("Hämtar avgångar och trafikstörningar..."):
+                st.session_state.departure_data = fetch_departure_data()
+                st.session_state.deviation_data = fetch_deviation_data()
+                st.session_state.last_update = datetime.now()
+                st.rerun()  # To refresh the display
+    else:
+        st.info("Välj bussar för att visa avgångar.")
 
 
 if __name__ == "__main__":
