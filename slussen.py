@@ -342,7 +342,6 @@ def main() -> None:
     configure_page()
 
     st.title("SLussen")
-    st.caption("Snabb översikt över bussavgångar och trafikstörningar vid Slussen.")
 
     # Initialize session state for data
     if "departure_data" not in st.session_state:
