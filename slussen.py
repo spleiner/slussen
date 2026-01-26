@@ -341,8 +341,6 @@ def filter_departures_by_selected_lines(
 def main() -> None:
     configure_page()
 
-    st.title("SLussen")
-
     # Initialize session state for data
     if "departure_data" not in st.session_state:
         st.session_state.departure_data = []
