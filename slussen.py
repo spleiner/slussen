@@ -1,10 +1,12 @@
-import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Any, Dict, Iterable, List, Optional
 
 import requests
 import streamlit as st
-from requests.exceptions import RequestException
+from requests.adapters import HTTPAdapter
+from requests.exceptions import HTTPError, RequestException, Timeout
+from urllib3.util.retry import Retry
 
 # Constants
 SITES = ["9192", "1321"]
@@ -54,12 +56,12 @@ BASE_DEPARTURE_URL = (
 )
 BASE_DEVIATION_URL = "https://deviations.integration.sl.se/v1/messages?future=true"
 PRIORITY_THRESHOLD = 35
-MAX_RETRIES = 3
-RETRY_DELAY = 5
+REQUEST_TIMEOUT_SECONDS = 10
+CACHE_TTL_SECONDS = 60
 
 
 # Configure Streamlit page
-def configure_page():
+def configure_page() -> None:
     """
     Configure the Streamlit page settings.
     """
@@ -79,46 +81,50 @@ def configure_page():
 
 
 # Utility function for fetching data with retry mechanism
-def fetch_data_with_retries(url):
-    """
-    Fetch data from a given URL and return JSON.
-    Includes retry mechanism for handling transient errors.
-    """
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            response = requests.get(url, headers=HEADERS, timeout=10)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.Timeout:
-            st.toast(
-                f"Request timed out. Retrying {attempt}/{MAX_RETRIES}...", icon="⏳"
-            )
-        except requests.exceptions.HTTPError as http_error:
-            st.toast(
-                f"HTTP error occurred: {http_error}. Retrying {attempt}/{MAX_RETRIES}...",
-                icon="❗",
-            )
-        except RequestException as request_error:
-            st.toast(
-                f"An error occurred: {request_error}. Retrying {attempt}/{MAX_RETRIES}...",
-                icon="❗",
-            )
-        time.sleep(RETRY_DELAY)
-    raise Exception("Failed to fetch data after multiple attempts.")
+@st.cache_resource
+def get_http_session() -> requests.Session:
+    """Create a shared HTTP session with retry strategy."""
+    session = requests.Session()
+    retry = Retry(
+        total=3,
+        backoff_factor=0.5,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=("GET",),
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+def fetch_json(url: str) -> Any:
+    """Fetch JSON data from a given URL with robust error handling."""
+    session = get_http_session()
+    try:
+        response = session.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT_SECONDS)
+        response.raise_for_status()
+        return response.json()
+    except Timeout as exc:
+        raise Timeout("Request timed out.") from exc
+    except HTTPError as exc:
+        raise HTTPError(f"HTTP error: {exc}") from exc
+    except RequestException as exc:
+        raise RequestException(f"Request error: {exc}") from exc
 
 
 # Function to fetch departure data concurrently
-@st.cache_data(ttl=60)
-def fetch_departure_data():
+@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
+def fetch_departure_data() -> List[Dict[str, Any]]:
     """
     Fetch and parse departure information for all specified sites.
     """
     departures = []
 
-    def fetch_and_parse(site):
+    def fetch_and_parse(site: str) -> List[Dict[str, Any]]:
         url = BASE_DEPARTURE_URL.format(site=site)
         try:
-            data = fetch_data_with_retries(url)
+            data = fetch_json(url)
             return parse_departure_data(data)
         except Exception as e:
             st.error(f"Error fetching data for site {site}: {e}")
@@ -136,11 +142,14 @@ def fetch_departure_data():
 
 
 # Function to parse departure data
-def parse_departure_data(data):
+def parse_departure_data(data: Any) -> List[Dict[str, Any]]:
     """
     Parse departure data from the API response.
     """
     departures = []
+    if not isinstance(data, dict):
+        return departures
+
     for departure in data.get("departures", []):
         try:
             line_designation = departure["line"]["designation"]
@@ -164,7 +173,7 @@ def parse_departure_data(data):
 
 
 # Function to determine stop point
-def get_stop_point(departure, line_designation):
+def get_stop_point(departure: Dict[str, Any], line_designation: str) -> str:
     """
     Determine the correct stop point based on line designation.
     """
@@ -177,17 +186,17 @@ def get_stop_point(departure, line_designation):
 
 
 # Function to fetch deviation data concurrently
-@st.cache_data(ttl=60)
-def fetch_deviation_data():
+@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
+def fetch_deviation_data() -> List[Dict[str, str]]:
     """
     Fetch and parse deviation messages for the specified sites.
     """
     deviations = []
 
-    def fetch_and_parse(site):
+    def fetch_and_parse(site: str) -> List[Dict[str, str]]:
         url = f"{BASE_DEVIATION_URL}&site={site}"
         try:
-            data = fetch_data_with_retries(url)
+            data = fetch_json(url)
             return parse_deviation_data(data)
         except Exception as e:
             st.error(f"Error fetching deviations for site {site}: {e}")
@@ -203,11 +212,14 @@ def fetch_deviation_data():
 
 
 # Function to parse deviation data
-def parse_deviation_data(data):
+def parse_deviation_data(data: Any) -> List[Dict[str, str]]:
     """
     Parse deviation messages from the API response.
     """
     deviations = []
+    if not isinstance(data, list):
+        return deviations
+
     for deviation in data:
         try:
             for message in deviation.get("message_variants", []):
@@ -223,7 +235,9 @@ def parse_deviation_data(data):
 
 
 # Function to determine if a deviation should be included
-def should_include_deviation(deviation, message):
+def should_include_deviation(
+    deviation: Dict[str, Any], message: Dict[str, Any]
+) -> bool:
     """
     Determine if the deviation message should be included based on priority score and language.
     """
@@ -232,18 +246,24 @@ def should_include_deviation(deviation, message):
 
 
 # Function to parse the expected time
-def parse_expected_time(expected_time_str):
+def parse_expected_time(expected_time_str: Optional[str]) -> Optional[datetime]:
     """
     Parse the expected time from a string, returning None if parsing fails.
     """
+    if not expected_time_str:
+        return None
     try:
-        return datetime.fromisoformat(expected_time_str)
+        normalized = expected_time_str.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
     except (ValueError, TypeError):
         return None
 
 
 # Function to calculate the priority score
-def calculate_priority_score(priority_data):
+def calculate_priority_score(priority_data: Dict[str, Any]) -> int:
     """
     Calculate the priority score from the priority dictionary.
     """
@@ -254,7 +274,7 @@ def calculate_priority_score(priority_data):
 
 
 # Function to display deviations
-def display_deviations(deviation_data):
+def display_deviations(deviation_data: List[Dict[str, str]]) -> None:
     """
     Display traffic deviations using Streamlit.
     """
@@ -266,7 +286,7 @@ def display_deviations(deviation_data):
 
 
 # Function to validate departure data
-def validate_departure_data(departure_data):
+def validate_departure_data(departure_data: List[Dict[str, Any]]) -> bool:
     """
     Validate the departure data and show warning if none are found.
     """
@@ -277,7 +297,7 @@ def validate_departure_data(departure_data):
 
 
 # Function to get bus lines
-def get_sorted_bus_lines(departure_data):
+def get_sorted_bus_lines(departure_data: List[Dict[str, Any]]) -> List[str]:
     """
     Get a sorted list of bus lines from departure data.
     """
@@ -289,7 +309,7 @@ def get_sorted_bus_lines(departure_data):
 
 
 # Function to get the sort key for bus lines
-def get_bus_sort_key(line):
+def get_bus_sort_key(line: str) -> float:
     """
     Extract numeric value from line for sorting purposes.
     """
@@ -298,7 +318,10 @@ def get_bus_sort_key(line):
 
 
 # Function to filter selected bus lines
-def filter_departures_by_selected_lines(departure_data, selected_bus_lines):
+def filter_departures_by_selected_lines(
+    departure_data: List[Dict[str, Any]],
+    selected_bus_lines: Iterable[str],
+) -> List[Dict[str, str]]:
     """
     Filter the departure data based on selected bus lines.
     """
@@ -315,8 +338,11 @@ def filter_departures_by_selected_lines(departure_data, selected_bus_lines):
 
 
 # Main script
-def main():
+def main() -> None:
     configure_page()
+
+    st.title("SLussen")
+    st.caption("Snabb översikt över bussavgångar och trafikstörningar vid Slussen.")
 
     # Initialize session state for data
     if "departure_data" not in st.session_state:
@@ -352,14 +378,18 @@ def main():
 
     # Select bus lines
     bus_lines = get_sorted_bus_lines(departure_data)
-    all_bus_lines = st.toggle(
-        "Alla bussar (avmarkera för att välja enskilda linjer)", value=True
-    )
-    selected_bus_lines = (
-        bus_lines
-        if all_bus_lines
-        else st.multiselect("Välj bussar", bus_lines, placeholder="Inga bussar valda")
-    )
+    with st.sidebar:
+        st.header("Filter")
+        all_bus_lines = st.toggle(
+            "Alla bussar (avmarkera för att välja enskilda linjer)", value=True
+        )
+        selected_bus_lines = (
+            bus_lines
+            if all_bus_lines
+            else st.multiselect(
+                "Välj bussar", bus_lines, placeholder="Inga bussar valda"
+            )
+        )
 
     # Validate selected bus lines
     if not selected_bus_lines:
